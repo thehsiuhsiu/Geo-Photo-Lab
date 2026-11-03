@@ -183,23 +183,67 @@ function startWatch() {
 }
 
 // ---------- 螢幕常亮 ----------
+// 優先用 Wake Lock API；被拒或不支援時，改用「靜音循環播放小影片」讓 iPhone 不自動鎖定。
+// iPhone 只允許在使用者點畫面時啟動，所以每次點畫面都會檢查一次。
 let wakeLock = null;
+let keepAwakeVideo = null;
+let wakeError = '';
+
+function keepAwakeVideoEl() {
+  if (keepAwakeVideo) return keepAwakeVideo;
+  const v = document.createElement('video');
+  v.src = 'media/keep-awake.mp4';
+  v.muted = true;
+  v.loop = true;
+  v.setAttribute('playsinline', '');
+  v.setAttribute('muted', '');
+  v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:0;bottom:0';
+  document.body.appendChild(v);
+  keepAwakeVideo = v;
+  return v;
+}
+
+function wakeActive() {
+  return !!wakeLock || (keepAwakeVideo && !keepAwakeVideo.paused);
+}
+
 async function applyWakeLock() {
-  const supported = 'wakeLock' in navigator;
-  if (!supported) {
-    $('sWakeHint').textContent = '這支手機的瀏覽器不支援，請升級 iOS，或到 iPhone 設定調整「自動鎖定」時間。';
+  if (!state.wakeEnabled || document.visibilityState !== 'visible') {
+    if (wakeLock) { await wakeLock.release().catch(() => {}); wakeLock = null; }
+    keepAwakeVideo?.pause();
+    renderWakeStatus();
     return;
   }
-  if (state.wakeEnabled && document.visibilityState === 'visible') {
-    if (wakeLock) return;
+  if (wakeActive()) { renderWakeStatus(); return; }
+  if ('wakeLock' in navigator) {
     try {
       wakeLock = await navigator.wakeLock.request('screen');
-      wakeLock.addEventListener('release', () => { wakeLock = null; });
-    } catch { wakeLock = null; }
-  } else if (wakeLock) {
-    await wakeLock.release().catch(() => {});
-    wakeLock = null;
+      wakeLock.addEventListener('release', () => { wakeLock = null; renderWakeStatus(); });
+      wakeError = '';
+      renderWakeStatus();
+      return;
+    } catch (err) {
+      wakeLock = null;
+      wakeError = err?.name || 'Error';
+    }
+  } else {
+    wakeError = 'Unsupported';
   }
+  // 備援：播放靜音影片
+  try {
+    await keepAwakeVideoEl().play();
+  } catch { /* 需要點一下畫面才能播放 */ }
+  renderWakeStatus();
+}
+
+function renderWakeStatus() {
+  const el = $('sWakeHint');
+  if (!el) return;
+  if (!state.wakeEnabled) { el.textContent = '已關閉：iPhone 會依「自動鎖定」時間關螢幕。'; return; }
+  if (wakeLock) { el.textContent = '✓ 運作中：開著本 App 時螢幕不會自動鎖定。'; return; }
+  if (keepAwakeVideo && !keepAwakeVideo.paused) { el.textContent = '✓ 運作中（備用方式）：開著本 App 時螢幕不會自動鎖定。'; return; }
+  el.textContent = '⚠ 目前沒有作用。請點一下畫面任何地方再試；若仍無效，請確認沒有開「低耗電模式」，並將 iOS 更新到 18.4 以上。'
+    + (wakeError ? `（${wakeError}）` : '');
 }
 
 // ---------- 外觀（自動／淺色／深色） ----------
@@ -806,6 +850,7 @@ let exportUrl = null;
 
 function openSettings() {
   $('sWake').checked = state.wakeEnabled;
+  renderWakeStatus();
   $('sLastBackup').textContent = formatDateTime(state.lastBackupAt);
   $('exportResult').hidden = true;
   $('importResult').textContent = '會與手機現有的清單和定點合併，同一筆保留較新的那份。';
@@ -948,6 +993,9 @@ function bind() {
 
   document.querySelectorAll('[data-theme-opt]').forEach((b) => b.addEventListener('click', () => setTheme(b.dataset.themeOpt)));
   darkQuery.addEventListener?.('change', applyTheme);
+  // iPhone 只在使用者操作時允許保持亮屏：每次點畫面都補一次
+  document.addEventListener('touchend', () => { if (state.wakeEnabled && !wakeActive()) applyWakeLock(); }, { passive: true });
+  document.addEventListener('click', () => { if (state.wakeEnabled && !wakeActive()) applyWakeLock(); });
   $('sWake').addEventListener('change', async (e) => {
     state.wakeEnabled = e.target.checked;
     await db.setMeta('wakeEnabled', state.wakeEnabled);

@@ -1,5 +1,5 @@
 // 離線支援：程式檔先用快取、背景更新；地圖底圖看過的會留著
-const APP_CACHE = 'geo-photo-app-v6';
+const APP_CACHE = 'geo-photo-app-v7';
 const TILE_CACHE = 'geo-photo-tiles-v1';
 const TILE_LIMIT = 800;
 
@@ -64,6 +64,8 @@ self.addEventListener('fetch', (e) => {
   }
 
   if (url.origin !== self.location.origin) return;
+  // 影片需要分段讀取（Range），交給瀏覽器直接處理，不經過快取
+  if (req.headers.has('range') || url.pathname.endsWith('.mp4')) return;
 
   // 同網域：先給快取（離線也能開），同時在背景抓新版
   e.respondWith((async () => {
