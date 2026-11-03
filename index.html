@@ -3,7 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f2f2f7">
+  <meta name="theme-color" content="#f2f2f7" id="themeColor">
+  <script>
+    // 先套用外觀，避免開啟時閃一下白色
+    (function () {
+      var t = 'auto';
+      try { t = localStorage.getItem('theme') || 'auto'; } catch (e) {}
+      var dark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.getElementById('themeColor').setAttribute('content', dark ? '#000000' : '#f2f2f7');
+    })();
+  </script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -133,6 +143,18 @@
     </header>
     <div class="sheet-body">
       <div class="group">
+        <div class="cell">
+          <span class="cell-label">外觀</span>
+          <div class="segmented" id="themeSeg">
+            <button type="button" data-theme-opt="auto">自動</button>
+            <button type="button" data-theme-opt="light">淺色</button>
+            <button type="button" data-theme-opt="dark">深色</button>
+          </div>
+        </div>
+      </div>
+      <p class="group-foot">「自動」會跟著 iPhone 的深色模式切換。</p>
+
+      <div class="group" style="margin-top:22px">
         <label class="cell">
           <span>螢幕保持亮著</span>
           <input type="checkbox" class="switch" id="sWake">

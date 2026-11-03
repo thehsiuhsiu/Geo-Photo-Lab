@@ -202,6 +202,23 @@ async function applyWakeLock() {
   }
 }
 
+// ---------- 外觀（自動／淺色／深色） ----------
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+function getThemePref() {
+  try { return localStorage.getItem('theme') || 'auto'; } catch { return 'auto'; }
+}
+function applyTheme() {
+  const pref = getThemePref();
+  const dark = pref === 'dark' || (pref === 'auto' && darkQuery.matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  $('themeColor')?.setAttribute('content', dark ? '#000000' : '#f2f2f7');
+  document.querySelectorAll('[data-theme-opt]').forEach((b) => b.classList.toggle('on', b.dataset.themeOpt === pref));
+}
+function setTheme(pref) {
+  try { localStorage.setItem('theme', pref); } catch { /* 無法儲存就只套用這次 */ }
+  applyTheme();
+}
+
 // ---------- 主畫面 ----------
 function isReliable() {
   return !!state.pos && state.pos.accuracy <= MAX_SWITCH_ACCURACY;
@@ -744,7 +761,7 @@ function pickOnMap(initial) {
   ensureMap();
   mapLayer.clearLayers();
   for (const s of state.spots) {
-    L.circle([s.lat, s.lng], { radius: s.radius, color: '#007aff', weight: 2, fillOpacity: 0.12 })
+    L.circle([s.lat, s.lng], { radius: s.radius, color: getComputedStyle(document.documentElement).getPropertyValue('--blue').trim() || '#007aff', weight: 2, fillOpacity: 0.12 })
       .bindTooltip(s.name).addTo(mapLayer);
   }
   if (state.pos) {
@@ -929,6 +946,8 @@ function bind() {
     touchX = null;
   });
 
+  document.querySelectorAll('[data-theme-opt]').forEach((b) => b.addEventListener('click', () => setTheme(b.dataset.themeOpt)));
+  darkQuery.addEventListener?.('change', applyTheme);
   $('sWake').addEventListener('change', async (e) => {
     state.wakeEnabled = e.target.checked;
     await db.setMeta('wakeEnabled', state.wakeEnabled);
@@ -952,6 +971,7 @@ function bind() {
 
 async function init() {
   bind();
+  applyTheme();
   state.wakeEnabled = await db.getMeta('wakeEnabled', true);
   await loadSpots();
   startWatch();
