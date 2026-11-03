@@ -31,13 +31,13 @@ function base64ToBytes(b64) {
 
 /** 產生加密的備份檔（File） */
 export async function createBackup(password) {
-  const [spots, photos, tombstones] = await Promise.all([db.getAllSpots(), db.getAllPhotos(), db.getAllTombstones()]);
+  const [spots, photos, tombstones, lists] = await Promise.all([db.getAllSpots(), db.getAllPhotos(), db.getAllTombstones(), db.getAllLists()]);
   const photoData = [];
   for (const p of photos) {
     const bytes = new Uint8Array(await p.blob.arrayBuffer());
     photoData.push({ id: p.id, spotId: p.spotId, type: p.blob.type || 'image/jpeg', data: bytesToBase64(bytes) });
   }
-  const payload = { app: 'geo-photo-lab', version: 1, exportedAt: Date.now(), spots, photos: photoData, tombstones };
+  const payload = { app: 'geo-photo-lab', version: 2, exportedAt: Date.now(), lists, spots, photos: photoData, tombstones };
   const plain = new TextEncoder().encode(JSON.stringify(payload));
 
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -78,20 +78,36 @@ export async function readBackup(file, password) {
 
 /**
  * 合併：同一定點以 updatedAt 較新的為準；本機刪除較晚的不復活；備份裡刪除較晚的會刪掉本機。
- * @returns {{added:number, updated:number, kept:number, removed:number}}
+ * 清單用同樣規則合併；這支手機原本沒有的清單會列在 newListIds。
+ * @returns {{added:number, updated:number, kept:number, removed:number, newListIds:string[]}}
  */
 export async function mergeBackup(data) {
-  const [localSpots, localTombs] = await Promise.all([db.getAllSpots(), db.getAllTombstones()]);
+  const [localSpots, localTombs, localLists] = await Promise.all([db.getAllSpots(), db.getAllTombstones(), db.getAllLists()]);
   const localById = new Map(localSpots.map((s) => [s.id, s]));
   const tombById = new Map(localTombs.map((t) => [t.id, t]));
+  const listById = new Map(localLists.map((l) => [l.id, l]));
+  const listOps = { lists: [], deleteListIds: [], newListIds: [] };
+
+  for (const l of data.lists || []) {
+    const local = listById.get(l.id);
+    const tomb = tombById.get(l.id);
+    if (!local && tomb && tomb.deletedAt >= l.updatedAt) continue;
+    if (local && local.updatedAt >= l.updatedAt) continue;
+    listOps.lists.push(l);
+    if (!local) listOps.newListIds.push(l.id);
+  }
+  for (const t of data.tombstones || []) {
+    const local = listById.get(t.id);
+    if (t.kind === 'list' && local && t.deletedAt > local.updatedAt) listOps.deleteListIds.push(t.id);
+  }
   const photosBySpot = new Map();
   for (const p of data.photos) {
     if (!photosBySpot.has(p.spotId)) photosBySpot.set(p.spotId, []);
     photosBySpot.get(p.spotId).push(p);
   }
 
-  const ops = { spots: [], photos: [], deletePhotoIds: [], deleteSpotIds: [], tombstones: [] };
-  const result = { added: 0, updated: 0, kept: 0, removed: 0 };
+  const ops = { spots: [], photos: [], deletePhotoIds: [], deleteSpotIds: [], tombstones: [], lists: listOps.lists, deleteListIds: listOps.deleteListIds };
+  const result = { added: 0, updated: 0, kept: 0, removed: 0, newListIds: listOps.newListIds };
 
   for (const s of data.spots) {
     const local = localById.get(s.id);
@@ -111,6 +127,12 @@ export async function mergeBackup(data) {
   }
 
   for (const t of data.tombstones || []) {
+    if (t.kind === 'list') {
+      const ll = listById.get(t.id);
+      const lt = tombById.get(t.id);
+      if ((!ll || t.deletedAt > ll.updatedAt) && (!lt || t.deletedAt > lt.deletedAt)) ops.tombstones.push(t);
+      continue;
+    }
     const local = localById.get(t.id);
     if (local && t.deletedAt > local.updatedAt) {
       ops.deleteSpotIds.push(t.id);

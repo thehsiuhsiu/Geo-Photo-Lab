@@ -125,7 +125,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .sheet-head h2 { margin: 0; font-size: 18px; }
 .sheet-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px 14px calc(24px + var(--safe-bottom)); }
 
-.form { display: grid; gap: 14px; }
+.form { display: grid; gap: 14px; align-content: start; }
 .form label, .field { display: grid; gap: 6px; font-weight: 600; font-size: 15px; }
 .field .label { font-weight: 600; }
 .form input[type=text], .form input[type=number], .form input[type=password], .form textarea, .form input[type=file] {
@@ -184,3 +184,24 @@ button, input, textarea { font: inherit; color: inherit; }
   background: rgba(20,24,22,.92); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; max-width: 90vw; text-align: center;
 }
 .toast[hidden] { display: none; }
+
+/* 清單 */
+.list-bar {
+  width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  border: 0; border-bottom: 1px solid var(--line); background: var(--accent-soft); color: var(--accent);
+  padding: 9px 14px; font-size: 15px; font-weight: 600; text-align: left;
+}
+.list-bar span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-bar .chev { font-size: 20px; line-height: 1; }
+.list-bar.paused { background: var(--warn-bg); color: var(--warn); }
+.filter { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff; font-size: 16px; margin-bottom: 10px; }
+.lists { list-style: none; margin: 8px 0 14px; padding: 0; display: grid; gap: 8px; }
+.list-item { display: flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.list-check { flex: 1; display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.list-check input, .check input, .radio-row input[type=radio] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.list-check .name { display: flex; flex-direction: column; font-weight: 600; }
+.list-check small { font-weight: 400; color: var(--muted); font-size: 13px; }
+.checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.check { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-weight: 400; }
+.radio-row { display: flex !important; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 400 !important; }
+.radio-row select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 16px; background: #fff; }

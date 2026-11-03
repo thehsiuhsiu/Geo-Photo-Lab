@@ -1,6 +1,7 @@
 // 本機資料庫（IndexedDB）：定點、參考照片、刪除紀錄、設定
 const DB_NAME = 'geo-photo-lab';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+export const FIRST_LIST_ID = 'list-1';
 
 let dbPromise = null;
 
@@ -18,6 +19,20 @@ function open() {
       // 刪除紀錄：匯入舊備份時，避免已刪除的定點又跑回來
       if (!db.objectStoreNames.contains('tombstones')) db.createObjectStore('tombstones', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+      // 第 2 版：加入清單；原有定點全部放進「清單1」，並設為觸發清單
+      if (!db.objectStoreNames.contains('lists')) {
+        const tx = req.transaction;
+        // 時間設為 0：匯入備份時，備份檔裡的同一個清單（例如改過名）一定優先
+        db.createObjectStore('lists', { keyPath: 'id' }).put({ id: FIRST_LIST_ID, name: '清單1', createdAt: 0, updatedAt: 0 });
+        tx.objectStore('meta').put([FIRST_LIST_ID], 'activeListIds');
+        tx.objectStore('spots').openCursor().onsuccess = (e) => {
+          const cur = e.target.result;
+          if (!cur) return;
+          const s = cur.value;
+          if (!Array.isArray(s.listIds) || !s.listIds.length) { s.listIds = [FIRST_LIST_ID]; cur.update(s); }
+          cur.continue();
+        };
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -105,15 +120,62 @@ export async function deleteSpot(id) {
  */
 export async function applyImport(ops) {
   const db = await open();
-  const tx = db.transaction(['spots', 'photos', 'tombstones'], 'readwrite');
+  const tx = db.transaction(['spots', 'photos', 'tombstones', 'lists'], 'readwrite');
   const ss = tx.objectStore('spots');
   const ps = tx.objectStore('photos');
   const ts = tx.objectStore('tombstones');
+  const ls = tx.objectStore('lists');
+  for (const id of ops.deleteListIds || []) ls.delete(id);
+  for (const l of ops.lists || []) { ls.put(l); ts.delete(l.id); }
   for (const id of ops.deletePhotoIds) ps.delete(id);
   for (const id of ops.deleteSpotIds) ss.delete(id);
   for (const s of ops.spots) { ss.put(s); ts.delete(s.id); }
   for (const p of ops.photos) ps.put(p);
   for (const t of ops.tombstones) ts.put(t);
+  await txDone(tx);
+}
+
+export async function getAllLists() {
+  const db = await open();
+  return reqP(db.transaction('lists').objectStore('lists').getAll());
+}
+
+export async function saveList(list) {
+  const db = await open();
+  const tx = db.transaction(['lists', 'tombstones'], 'readwrite');
+  tx.objectStore('lists').put(list);
+  tx.objectStore('tombstones').delete(list.id);
+  await txDone(tx);
+  await markDirty();
+}
+
+/**
+ * 刪除清單：changedSpots 是改過 listIds 的定點（已更新 updatedAt），deleteSpotIds 是一併刪除的定點。
+ */
+export async function deleteList(listId, changedSpots, deleteSpotIds) {
+  const db = await open();
+  const tx = db.transaction(['lists', 'spots', 'photos', 'tombstones'], 'readwrite');
+  const now = Date.now();
+  const ss = tx.objectStore('spots');
+  const ts = tx.objectStore('tombstones');
+  for (const s of changedSpots) ss.put(s);
+  for (const id of deleteSpotIds) {
+    const spot = await reqP(ss.get(id));
+    if (spot) for (const pid of spot.photoIds || []) tx.objectStore('photos').delete(pid);
+    ss.delete(id);
+    ts.put({ id, deletedAt: now });
+  }
+  tx.objectStore('lists').delete(listId);
+  ts.put({ id: listId, kind: 'list', deletedAt: now });
+  await txDone(tx);
+  await markDirty();
+}
+
+/** 直接寫入定點（不算使用者變更），用於修正資料 */
+export async function putSpotsRaw(spots) {
+  const db = await open();
+  const tx = db.transaction('spots', 'readwrite');
+  for (const s of spots) tx.objectStore('spots').put(s);
   await txDone(tx);
 }
 
