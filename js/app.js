@@ -375,11 +375,14 @@ function renderSpotCard(main, v) {
           <button class="btn-tinted" data-edit="${s.id}">編輯</button>
         </div>
         ${s.note ? `<p class="note">${escapeHtml(s.note)}</p>` : ''}
-        ${v.others.length ? `<div class="others"><div class="others-label">也在範圍內</div><div class="chips">${v.others.map((o) => `<button class="chip" data-select="${o.id}">${escapeHtml(o.name)}</button>`).join('')}</div></div>` : ''}
       </div>
       ${ids.length > 1 ? '<div class="more-photos" id="morePhotos"></div>' : ''}
       ${ids.length ? '' : '<p class="no-photo">這個定點還沒有參考照片。</p>'}
-    </article>`;
+    </article>
+    ${v.others.length ? `
+      <p class="group-title others-title">也在範圍內・點一下切換</p>
+      <div class="group others-group">${v.others.map((o) => spotCell(o, `data-select="${o.id}"`)).join('')}</div>` : ''}`;
+  fillThumbs(main);
   main.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => {
     state.selectedId = b.dataset.select;
     render();
