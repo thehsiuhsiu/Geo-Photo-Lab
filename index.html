@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1f3a34">
+  <meta name="theme-color" content="#f2f2f7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="定點照片">
   <title>定點照片</title>
   <link rel="manifest" href="manifest.webmanifest">
@@ -16,181 +16,180 @@
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <header class="topbar">
-    <h1>定點照片</h1>
-    <div class="status" id="gpsStatus">定位中…</div>
-    <nav class="top-actions">
-      <button class="icon-btn" id="btnList" aria-label="全部定點">定點</button>
-      <button class="icon-btn" id="btnSettings" aria-label="設定與備份">設定</button>
-    </nav>
+  <!-- 主畫面 -->
+  <header class="navbar main-nav">
+    <div class="nav-row">
+      <span class="status" id="gpsStatus">定位中…</span>
+      <div class="nav-actions">
+        <button class="nav-icon" id="btnManage" aria-label="管理清單與定點"></button>
+        <button class="nav-icon" id="btnSettings" aria-label="設定與備份"></button>
+      </div>
+    </div>
+    <h1 class="large-title">定點照片</h1>
+    <button class="trigger-pill" id="listBar"></button>
   </header>
 
-  <button class="list-bar" id="listBar"></button>
-
   <div id="banners"></div>
-
   <main id="main" class="main"></main>
 
-  <footer class="bottombar">
-    <button class="btn primary" id="btnAddHere">＋ 用目前位置新增</button>
-    <button class="btn" id="btnAddMap">地圖選點新增</button>
-  </footer>
-
-  <!-- 定點清單 -->
-  <section class="sheet" id="listSheet" hidden>
-    <div class="sheet-head">
-      <h2>全部定點</h2>
-      <button class="btn small" data-close>關閉</button>
-    </div>
-    <div class="sheet-body">
-      <select id="listFilter" class="filter" aria-label="依清單篩選"></select>
-      <div id="listBody"></div>
-    </div>
-  </section>
-
-  <!-- 清單：勾選觸發清單、新增／改名／刪除 -->
-  <section class="sheet" id="listsSheet" hidden>
-    <div class="sheet-head">
-      <h2>觸發清單</h2>
-      <button class="btn small" data-close>完成</button>
-    </div>
-    <div class="sheet-body">
-      <p class="hint">勾選的清單，裡面的定點才會觸發。全部不勾就是暫停。</p>
-      <ul class="lists" id="listsBody"></ul>
-      <button class="btn" id="btnNewList">＋ 新增清單</button>
-    </div>
-  </section>
-
-  <!-- 刪除清單 -->
-  <section class="sheet" id="listDeleteSheet" hidden>
-    <div class="sheet-head">
-      <h2 id="ldTitle">刪除清單</h2>
-      <button class="btn small" id="ldCancel">取消</button>
-    </div>
-    <div class="sheet-body form">
-      <p id="ldInfo"></p>
-      <label class="radio-row"><input type="radio" name="ldMode" value="move" checked> 把這些定點移到
-        <select id="ldTarget"></select>
-      </label>
-      <label class="radio-row"><input type="radio" name="ldMode" value="delete"> 這些定點一併刪除</label>
-      <button class="btn danger" id="ldConfirm">刪除清單</button>
-    </div>
+  <!-- 管理：清單與定點 -->
+  <section class="sheet" id="manageSheet" hidden>
+    <header class="sheet-nav">
+      <span></span>
+      <h2>管理</h2>
+      <button class="nav-text bold" data-close>完成</button>
+    </header>
+    <div class="sheet-body" id="manageBody"></div>
   </section>
 
   <!-- 編輯定點 -->
   <section class="sheet" id="editSheet" hidden>
-    <div class="sheet-head">
+    <header class="sheet-nav">
+      <button class="nav-text" id="editCancel">取消</button>
       <h2 id="editTitle">新增定點</h2>
-      <button class="btn small" id="editCancel">取消</button>
-    </div>
-    <form class="sheet-body form" id="editForm" autocomplete="off">
-      <label>名稱
-        <input type="text" id="fName" required maxlength="60" placeholder="例如：OO巡邏箱">
-      </label>
-      <div class="field">
-        <span class="label">位置</span>
-        <div class="coord" id="fCoord"></div>
-        <div class="row">
-          <button type="button" class="btn small" id="fUseHere">改用目前位置</button>
-          <button type="button" class="btn small" id="fUseMap">在地圖上調整</button>
-        </div>
-      </div>
-      <div class="field">
-        <span class="label">所屬清單（至少一個）</span>
-        <div class="checks" id="fLists"></div>
-      </div>
-      <label>觸發半徑（公尺）
-        <input type="number" id="fRadius" min="5" max="1000" step="1" inputmode="numeric" required>
-      </label>
-      <label>備註
-        <textarea id="fNote" rows="3" maxlength="1000" placeholder="例如：巡邏箱在巷子內側電線桿上"></textarea>
-      </label>
-      <div class="field">
-        <span class="label">參考照片</span>
-        <div class="thumbs" id="fPhotos"></div>
-        <label class="btn small file-btn">＋ 拍照或選照片
-          <input type="file" id="fFile" accept="image/*" multiple hidden>
+      <button class="nav-text bold" id="editSave">儲存</button>
+    </header>
+    <form class="sheet-body" id="editForm" autocomplete="off">
+      <div class="group">
+        <label class="cell input-cell">
+          <span class="cell-label">名稱</span>
+          <input type="text" id="fName" maxlength="60" placeholder="例如：OO巡邏箱">
         </label>
-        <div class="hint" id="fPhotoHint"></div>
+        <label class="cell input-cell">
+          <span class="cell-label">觸發半徑</span>
+          <input type="number" id="fRadius" min="5" max="1000" step="1" inputmode="numeric">
+          <span class="unit">公尺</span>
+        </label>
       </div>
-      <div class="form-actions">
-        <button type="submit" class="btn primary" id="editSave">儲存</button>
-        <button type="button" class="btn danger" id="editDelete" hidden>刪除這個定點</button>
+
+      <p class="group-title">位置</p>
+      <div class="group">
+        <div class="cell"><span class="coord" id="fCoord"></span></div>
+        <button type="button" class="cell action-cell" id="fUseHere">改用目前位置</button>
+        <button type="button" class="cell action-cell" id="fUseMap">在地圖上調整</button>
+      </div>
+
+      <p class="group-title">所屬清單</p>
+      <div class="group" id="fLists"></div>
+      <p class="group-foot">至少選一個。</p>
+
+      <p class="group-title">備註</p>
+      <div class="group">
+        <textarea class="cell textarea-cell" id="fNote" rows="3" maxlength="1000" placeholder="例如：巡邏箱在巷子內側電線桿上"></textarea>
+      </div>
+
+      <p class="group-title">參考照片</p>
+      <div class="photo-grid" id="fPhotos"></div>
+      <p class="group-foot" id="fPhotoHint"></p>
+      <input type="file" id="fFile" accept="image/*" multiple hidden>
+
+      <div class="group" id="editDeleteGroup">
+        <button type="button" class="cell action-cell danger center" id="editDelete">刪除定點</button>
       </div>
     </form>
   </section>
 
+  <!-- 刪除清單 -->
+  <section class="sheet" id="listDeleteSheet" hidden>
+    <header class="sheet-nav">
+      <button class="nav-text" id="ldCancel">取消</button>
+      <h2>刪除清單</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <p class="lead" id="ldInfo"></p>
+      <div class="group">
+        <label class="cell choice-cell"><span>移到其他清單</span><input type="radio" name="ldMode" value="move" checked></label>
+        <label class="cell choice-cell" id="ldTargetCell"><span class="sub">移到</span><select id="ldTarget"></select></label>
+        <label class="cell choice-cell"><span class="danger-text">連同定點一起刪除</span><input type="radio" name="ldMode" value="delete"></label>
+      </div>
+      <div class="group">
+        <button class="cell action-cell danger center" id="ldConfirm">刪除清單</button>
+      </div>
+    </div>
+  </section>
+
   <!-- 地圖選點 -->
   <section class="sheet map-sheet" id="mapSheet" hidden>
-    <div class="sheet-head">
-      <h2>移動地圖，對準十字</h2>
-      <button class="btn small" id="mapCancel">取消</button>
-    </div>
+    <header class="sheet-nav">
+      <button class="nav-text" id="mapCancel">取消</button>
+      <h2>選擇位置</h2>
+      <button class="nav-text bold" id="mapConfirm">完成</button>
+    </header>
     <div class="map-wrap">
       <div id="map"></div>
       <div class="crosshair" aria-hidden="true"></div>
-      <button class="btn small locate-btn" id="mapLocate">回到我的位置</button>
-    </div>
-    <div class="map-actions">
-      <button class="btn primary" id="mapConfirm">確定這個位置</button>
+      <div class="map-tip">移動地圖，讓十字對準定點</div>
+      <button class="map-locate" id="mapLocate" aria-label="回到我的位置"></button>
     </div>
   </section>
 
   <!-- 設定與備份 -->
   <section class="sheet" id="settingsSheet" hidden>
-    <div class="sheet-head">
-      <h2>設定與備份</h2>
-      <button class="btn small" data-close>關閉</button>
-    </div>
+    <header class="sheet-nav">
+      <span></span>
+      <h2>設定</h2>
+      <button class="nav-text bold" data-close>完成</button>
+    </header>
     <div class="sheet-body">
-      <div class="card">
-        <label class="switch-row">
-          <span>開著時螢幕保持亮著</span>
-          <input type="checkbox" id="sWake">
+      <div class="group">
+        <label class="cell">
+          <span>螢幕保持亮著</span>
+          <input type="checkbox" class="switch" id="sWake">
         </label>
-        <div class="hint" id="sWakeHint"></div>
       </div>
+      <p class="group-foot" id="sWakeHint">開著本 App 時螢幕不會自動鎖定，定位才不會中斷。</p>
 
-      <div class="card">
-        <h3>匯出備份</h3>
-        <p class="hint">上次備份：<span id="sLastBackup">從未</span></p>
-        <form id="exportForm" class="form">
-          <label>備份密碼
-            <input type="password" id="ePass1" minlength="4" required autocomplete="new-password">
-          </label>
-          <label>再輸入一次
-            <input type="password" id="ePass2" minlength="4" required autocomplete="new-password">
-          </label>
-          <p class="hint">忘記密碼就無法還原，請記好。</p>
-          <button type="submit" class="btn primary">產生備份檔</button>
-        </form>
-        <div id="exportResult" hidden>
-          <p id="exportInfo"></p>
-          <div class="row">
-            <button class="btn primary" id="exportShare">儲存／分享備份檔</button>
-            <a class="btn" id="exportDownload">下載</a>
-          </div>
+      <p class="group-title">匯出備份</p>
+      <form id="exportForm">
+        <div class="group">
+          <label class="cell input-cell"><span class="cell-label">密碼</span><input type="password" id="ePass1" minlength="4" autocomplete="new-password" placeholder="至少 4 個字"></label>
+          <label class="cell input-cell"><span class="cell-label">再輸入</span><input type="password" id="ePass2" minlength="4" autocomplete="new-password" placeholder="確認密碼"></label>
+          <button type="submit" class="cell action-cell" id="exportBtn">產生備份檔</button>
+        </div>
+      </form>
+      <p class="group-foot">上次備份：<span id="sLastBackup">從未</span>。忘記密碼就無法還原。</p>
+      <div id="exportResult" hidden>
+        <div class="group">
+          <div class="cell"><span class="sub" id="exportInfo"></span></div>
+          <button class="cell action-cell" id="exportShare">儲存到「檔案」或分享</button>
+          <a class="cell action-cell" id="exportDownload">下載</a>
         </div>
       </div>
 
-      <div class="card">
-        <h3>匯入備份</h3>
-        <p class="hint">會與手機裡現有的清單和定點合併，同一筆保留較新的那份。</p>
-        <form id="importForm" class="form">
-          <label>備份檔
-            <input type="file" id="iFile" required>
-          </label>
-          <label>備份密碼
-            <input type="password" id="iPass" required autocomplete="current-password">
-          </label>
-          <button type="submit" class="btn primary">匯入</button>
-        </form>
-        <p id="importResult" class="hint"></p>
-      </div>
+      <p class="group-title">匯入備份</p>
+      <form id="importForm">
+        <div class="group">
+          <label class="cell input-cell file-cell"><span class="cell-label">備份檔</span><span class="file-name" id="iFileName">選擇檔案</span><input type="file" id="iFile" hidden></label>
+          <label class="cell input-cell"><span class="cell-label">密碼</span><input type="password" id="iPass" autocomplete="current-password" placeholder="備份時設的密碼"></label>
+          <button type="submit" class="cell action-cell">匯入並合併</button>
+        </div>
+      </form>
+      <p class="group-foot" id="importResult">會與手機現有的清單和定點合併，同一筆保留較新的那份。</p>
 
-      <p class="hint center">資料只存在這支手機，不會上傳。<br>地圖 © OpenStreetMap 貢獻者</p>
+      <p class="group-foot center about">資料只存在這支手機，不會上傳。<br>地圖 © OpenStreetMap 貢獻者</p>
     </div>
   </section>
+
+  <!-- 動作選單 -->
+  <div class="action-sheet" id="actionSheet" hidden>
+    <div class="action-panel">
+      <div class="action-group" id="actionGroup"></div>
+      <button class="action-btn cancel" id="actionCancel">取消</button>
+    </div>
+  </div>
+
+  <!-- 輸入對話框 -->
+  <div class="dialog" id="textDialog" hidden>
+    <form class="dialog-box" id="textForm">
+      <h3 id="textTitle"></h3>
+      <input type="text" id="textInput" maxlength="30">
+      <div class="dialog-actions">
+        <button type="button" id="textCancel">取消</button>
+        <button type="submit" class="bold">確定</button>
+      </div>
+    </form>
+  </div>
 
   <!-- 看大圖 -->
   <div class="viewer" id="viewer" hidden>
