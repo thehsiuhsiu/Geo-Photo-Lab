@@ -7,6 +7,7 @@ const LEAVE_MARGIN = 5; // 已在定點內時，多 5 公尺才算離開，避�
 const NEAREST_COUNT = 3;
 const BACKUP_REMIND_MS = 7 * 24 * 60 * 60 * 1000;
 const STALE_MS = 30 * 1000;
+const MAX_SWITCH_ACCURACY = 50; // 定位誤差超過這個公尺數，不拿來切換定點
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,6 +21,7 @@ const state = {
   currentId: null, // 目前定點
   selectedId: null, // 範圍內多個定點時，手動切換到的那個
   previewId: null, // 範圍外手動預覽的定點
+  decided: false, // 是否已用夠準的定位判斷過一次
   viewKey: '',
   dirtySince: null,
   lastBackupAt: null,
@@ -153,6 +155,13 @@ function computeView() {
 
   const withD = spots.map((s) => ({ s, d: spotDistance(s) })).sort((a, b) => a.d - b.d);
   const inRange = withD.filter(({ s, d }) => d <= s.radius + (s.id === state.currentId ? LEAVE_MARGIN : 0));
+  // 誤差太大：維持上一次的判斷，不切換照片
+  if (!isReliable() && state.decided) {
+    const held = withD.find((x) => x.s.id === state.currentId);
+    if (held) return { mode: 'here', spot: held.s, others: inRange.filter((x) => x.s.id !== held.s.id).map((x) => x.s) };
+    if (!state.currentId) return { mode: 'away', nearest: withD.slice(0, NEAREST_COUNT).map((x) => x.s) };
+  }
+  if (isReliable()) state.decided = true;
   if (inRange.length) {
     let cur = inRange.find((x) => x.s.id === state.selectedId) || inRange[0];
     if (!inRange.some((x) => x.s.id === state.selectedId)) state.selectedId = null;
@@ -162,6 +171,10 @@ function computeView() {
   state.currentId = null;
   state.selectedId = null;
   return { mode: 'away', nearest: withD.slice(0, NEAREST_COUNT).map((x) => x.s) };
+}
+
+function isReliable() {
+  return !!state.pos && state.pos.accuracy <= MAX_SWITCH_ACCURACY;
 }
 
 function render() {
@@ -218,7 +231,9 @@ function renderBanners() {
   if (state.geoError) out.push(`<div class="banner bad">${escapeHtml(state.geoError)}</div>`);
   if (state.pos) {
     const r = currentRadius();
-    if (r != null && state.pos.accuracy > r) {
+    if (!isReliable()) {
+      out.push(`<div class="banner warn">定位誤差 ±${Math.round(state.pos.accuracy)} 公尺太大（超過 ${MAX_SWITCH_ACCURACY} 公尺），${state.decided ? '暫時不切換定點' : '顯示的定點可能不準'}。</div>`);
+    } else if (r != null && state.pos.accuracy > r) {
       out.push(`<div class="banner warn">定位誤差 ±${Math.round(state.pos.accuracy)} 公尺，比觸發半徑 ${r} 公尺還大，顯示的定點可能不準。</div>`);
     }
     if (Date.now() - state.pos.ts > STALE_MS) {
