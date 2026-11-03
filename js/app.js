@@ -12,6 +12,9 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
   spots: [],
+  lists: [],
+  activeListIds: new Set(), // 觸發清單
+  listFilter: '', // 「定點」頁篩選
   pos: null, // {lat, lng, accuracy, ts}
   geoError: null,
   currentId: null, // 目前定點
@@ -50,11 +53,41 @@ function toast(msg) {
 
 // ---------- 資料 ----------
 async function loadSpots() {
+  state.lists = await db.getAllLists();
+  if (!state.lists.length) {
+    const now = Date.now();
+    const l = { id: db.newId(), name: '清單1', createdAt: now, updatedAt: now };
+    await db.saveList(l);
+    state.lists = [l];
+  }
+  state.lists.sort((a, b) => a.createdAt - b.createdAt);
+  const listIds = new Set(state.lists.map((l) => l.id));
+  state.activeListIds = new Set((await db.getMeta('activeListIds', [])).filter((id) => listIds.has(id)));
   state.spots = await db.getAllSpots();
+  // 修正：清單不存在就拿掉；一個都沒有就放進第一個清單
+  const fixes = [];
+  for (const s of state.spots) {
+    const ids = (s.listIds || []).filter((id) => listIds.has(id));
+    if (!ids.length) ids.push(state.lists[0].id);
+    if (ids.length !== (s.listIds || []).length || ids.some((id, i) => id !== s.listIds[i])) { s.listIds = ids; fixes.push(s); }
+  }
+  if (fixes.length) await db.putSpotsRaw(fixes);
   state.dirtySince = await db.getMeta('dirtySince');
   state.lastBackupAt = await db.getMeta('lastBackupAt');
   state.viewKey = '';
   render();
+}
+
+function activeSpots() {
+  return state.spots.filter((s) => s.listIds.some((id) => state.activeListIds.has(id)));
+}
+
+function listName(id) {
+  return state.lists.find((l) => l.id === id)?.name ?? '';
+}
+
+async function saveActive() {
+  await db.setMeta('activeListIds', [...state.activeListIds]);
 }
 
 function spotDistance(s) {
@@ -113,9 +146,12 @@ function computeView() {
     state.previewId = null;
   }
   if (!state.spots.length) return { mode: 'empty' };
+  if (!state.activeListIds.size) return { mode: 'paused' };
+  const spots = activeSpots();
+  if (!spots.length) return { mode: 'noActiveSpots' };
   if (!state.pos) return { mode: 'waiting' };
 
-  const withD = state.spots.map((s) => ({ s, d: spotDistance(s) })).sort((a, b) => a.d - b.d);
+  const withD = spots.map((s) => ({ s, d: spotDistance(s) })).sort((a, b) => a.d - b.d);
   const inRange = withD.filter(({ s, d }) => d <= s.radius + (s.id === state.currentId ? LEAVE_MARGIN : 0));
   if (inRange.length) {
     let cur = inRange.find((x) => x.s.id === state.selectedId) || inRange[0];
@@ -130,14 +166,26 @@ function computeView() {
 
 function render() {
   renderStatus();
+  renderListBar();
   renderBanners();
   const v = computeView();
-  const key = [v.mode, v.spot?.id, v.spot?.updatedAt, (v.others || []).map((s) => s.id).join(','), (v.nearest || []).map((s) => s.id).join(','), state.spots.length].join('|');
+  const key = [v.mode, v.spot?.id, v.spot?.updatedAt, (v.others || []).map((s) => s.id).join(','), (v.nearest || []).map((s) => s.id).join(','), state.spots.length, [...state.activeListIds].join(',')].join('|');
   if (key !== state.viewKey) {
     state.viewKey = key;
     renderMain(v);
   }
   updateDistances();
+}
+
+function renderListBar() {
+  const names = state.lists.filter((l) => state.activeListIds.has(l.id)).map((l) => l.name);
+  const text = names.length ? `觸發中：${names.join('、')}` : '未啟用任何清單';
+  const bar = $('listBar');
+  if (bar.dataset.text !== text) {
+    bar.dataset.text = text;
+    bar.innerHTML = `<span>${escapeHtml(text)}</span><span class="chev">›</span>`;
+    bar.classList.toggle('paused', !names.length);
+  }
 }
 
 function renderStatus() {
@@ -152,9 +200,10 @@ function renderStatus() {
 function currentRadius() {
   const s = state.spots.find((x) => x.id === state.currentId);
   if (s) return s.radius;
-  if (!state.pos || !state.spots.length) return null;
+  const spots = activeSpots();
+  if (!state.pos || !spots.length) return null;
   let best = null;
-  for (const x of state.spots) {
+  for (const x of spots) {
     const d = spotDistance(x);
     if (!best || d < best.d) best = { d, r: x.radius };
   }
@@ -188,6 +237,14 @@ function renderMain(v) {
   const main = $('main');
   if (v.mode === 'empty') {
     main.innerHTML = `<div class="empty"><p class="big">還沒有任何定點</p><p>站在現場按「用目前位置新增」，或用地圖選點新增。</p></div>`;
+    return;
+  }
+  if (v.mode === 'paused') {
+    main.innerHTML = `<div class="empty"><p class="big">未啟用任何清單</p><p>目前不會觸發任何定點。點上方那條選擇要觸發的清單。</p></div>`;
+    return;
+  }
+  if (v.mode === 'noActiveSpots') {
+    main.innerHTML = `<div class="empty"><p class="big">觸發中的清單沒有定點</p><p>新增定點，或點上方那條改選其他清單。</p></div>`;
     return;
   }
   if (v.mode === 'waiting') {
@@ -281,20 +338,29 @@ function closeSheet(id) {
 }
 
 function openList() {
+  const sel = $('listFilter');
+  if (!state.lists.some((l) => l.id === state.listFilter)) state.listFilter = '';
+  sel.innerHTML = `<option value="">全部清單</option>` + state.lists.map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+  sel.value = state.listFilter;
+  renderSpotList();
+  openSheet('listSheet');
+}
+
+function renderSpotList() {
   const rows = state.spots
+    .filter((s) => !state.listFilter || s.listIds.includes(state.listFilter))
     .map((s) => ({ s, d: spotDistance(s) }))
     .sort((a, b) => (a.d ?? 0) - (b.d ?? 0) || a.s.name.localeCompare(b.s.name, 'zh-Hant'));
   $('listBody').innerHTML = rows.length
     ? `<ul class="spot-list">${rows.map(({ s, d }) => `<li><button class="spot-row" data-edit="${s.id}">
-        <span class="name">${escapeHtml(s.name)}<small>${(s.photoIds || []).length} 張照片・半徑 ${s.radius} 公尺</small></span>
+        <span class="name">${escapeHtml(s.name)}<small>${escapeHtml(s.listIds.map(listName).join('、'))}・${(s.photoIds || []).length} 張照片・半徑 ${s.radius} 公尺</small></span>
         <span class="dist">${d == null ? '' : formatDistance(d)}</span>
       </button></li>`).join('')}</ul>`
-    : '<p class="hint center">還沒有任何定點。</p>';
+    : `<p class="hint center">${state.listFilter ? '這個清單沒有定點。' : '還沒有任何定點。'}</p>`;
   $('listBody').querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => {
     const s = state.spots.find((x) => x.id === b.dataset.edit);
     if (s) openEditor(s);
   }));
-  openSheet('listSheet');
 }
 
 // ---------- 編輯定點 ----------
@@ -312,18 +378,29 @@ function openEditor(spot, presetPos) {
     $('fName').value = spot.name;
     $('fRadius').value = spot.radius;
     $('fNote').value = spot.note || '';
+    draft.listIds = new Set(spot.listIds);
   } else {
     draft = { isNew: true, original: null, lat: presetPos.lat, lng: presetPos.lng, accuracy: presetPos.accuracy, photos: [], removed: [] };
     $('fName').value = '';
     $('fRadius').value = DEFAULT_RADIUS;
     $('fNote').value = '';
+    draft.listIds = new Set(state.activeListIds);
   }
+  renderDraftLists();
   $('editTitle').textContent = spot ? '編輯定點' : '新增定點';
   $('editDelete').hidden = !spot;
   $('fPhotoHint').textContent = '';
   renderDraftCoord();
   renderDraftPhotos();
   openSheet('editSheet');
+}
+
+function renderDraftLists() {
+  const box = $('fLists');
+  box.innerHTML = state.lists.map((l) => `<label class="check"><input type="checkbox" value="${l.id}" ${draft.listIds.has(l.id) ? 'checked' : ''}> ${escapeHtml(l.name)}</label>`).join('');
+  box.querySelectorAll('input').forEach((i) => i.addEventListener('change', () => {
+    if (i.checked) draft.listIds.add(i.value); else draft.listIds.delete(i.value);
+  }));
 }
 
 function renderDraftCoord() {
@@ -379,6 +456,8 @@ async function saveDraft(e) {
   const radius = Math.round(Number($('fRadius').value));
   if (!name) { toast('請輸入名稱'); return; }
   if (!(radius >= 5 && radius <= 1000)) { toast('觸發半徑請填 5～1000 公尺'); return; }
+  const listIds = state.lists.map((l) => l.id).filter((id) => draft.listIds.has(id));
+  if (!listIds.length) { toast('請至少勾選一個清單'); return; }
   const now = Date.now();
   const o = draft.original;
   const spot = {
@@ -389,6 +468,7 @@ async function saveDraft(e) {
     radius,
     note: $('fNote').value.trim(),
     photoIds: draft.photos.map((p) => p.id),
+    listIds,
     createdAt: o ? o.createdAt : now,
     updatedAt: now,
   };
@@ -403,8 +483,9 @@ async function saveDraft(e) {
   for (const id of draft.removed) { const u = photoUrls.get(id); if (u) URL.revokeObjectURL(u); photoUrls.delete(id); }
   draft = null;
   closeSheet('editSheet');
-  closeSheet('listSheet');
-  toast('已儲存');
+  if (!listIds.some((id) => state.activeListIds.has(id))) toast('已儲存（這個定點的清單目前沒有在觸發）');
+  else toast('已儲存');
+  if (!$('listSheet').hidden) { await loadSpots(); renderSpotList(); return; }
   await loadSpots();
 }
 
@@ -414,10 +495,10 @@ async function deleteDraftSpot() {
   if (!confirm(`確定刪除「${s.name}」和它的照片？`)) return;
   await db.deleteSpot(s.id);
   discardDraft();
-  closeSheet('listSheet');
   if (state.previewId === s.id) state.previewId = null;
   toast('已刪除');
   await loadSpots();
+  if (!$('listSheet').hidden) renderSpotList();
 }
 
 // ---------- 地圖選點 ----------
@@ -477,6 +558,114 @@ function stepViewer(n) {
   if (j < 0 || j >= viewer.urls.length) return;
   viewer.i = j;
   showViewer();
+}
+
+// ---------- 清單 ----------
+function openLists() {
+  renderLists();
+  openSheet('listsSheet');
+}
+
+function renderLists() {
+  const counts = new Map(state.lists.map((l) => [l.id, 0]));
+  for (const s of state.spots) for (const id of s.listIds) counts.set(id, (counts.get(id) || 0) + 1);
+  const box = $('listsBody');
+  box.innerHTML = state.lists.map((l) => `
+    <li class="list-item">
+      <label class="list-check">
+        <input type="checkbox" value="${l.id}" ${state.activeListIds.has(l.id) ? 'checked' : ''}>
+        <span class="name">${escapeHtml(l.name)}<small>${counts.get(l.id) || 0} 個定點</small></span>
+      </label>
+      <button class="btn small" data-rename="${l.id}">改名</button>
+      <button class="btn small danger" data-del="${l.id}">刪除</button>
+    </li>`).join('');
+  box.querySelectorAll('input[type=checkbox]').forEach((i) => i.addEventListener('change', async () => {
+    if (i.checked) state.activeListIds.add(i.value); else state.activeListIds.delete(i.value);
+    await saveActive();
+    state.previewId = null;
+    render();
+  }));
+  box.querySelectorAll('[data-rename]').forEach((b) => b.addEventListener('click', () => renameList(b.dataset.rename)));
+  box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => startDeleteList(b.dataset.del)));
+}
+
+async function newList() {
+  const names = new Set(state.lists.map((l) => l.name));
+  let n = state.lists.length + 1;
+  while (names.has(`清單${n}`)) n++;
+  const name = prompt('清單名稱', `清單${n}`);
+  if (name == null) return;
+  const trimmed = name.trim() || `清單${n}`;
+  const now = Date.now();
+  const l = { id: db.newId(), name: trimmed.slice(0, 30), createdAt: now, updatedAt: now };
+  await db.saveList(l);
+  state.activeListIds.add(l.id);
+  await saveActive();
+  await loadSpots();
+  renderLists();
+}
+
+async function renameList(id) {
+  const l = state.lists.find((x) => x.id === id);
+  if (!l) return;
+  const name = prompt('新的清單名稱', l.name);
+  if (name == null || !name.trim() || name.trim() === l.name) return;
+  await db.saveList({ ...l, name: name.trim().slice(0, 30), updatedAt: Date.now() });
+  await loadSpots();
+  renderLists();
+}
+
+let deletingListId = null;
+
+function startDeleteList(id) {
+  const l = state.lists.find((x) => x.id === id);
+  if (!l) return;
+  if (state.lists.length === 1) { toast('至少要保留一個清單，可以改名'); return; }
+  const only = state.spots.filter((s) => s.listIds.length === 1 && s.listIds[0] === id);
+  if (!only.length) {
+    if (!confirm(`刪除清單「${l.name}」？\n定點不會被刪除（它們還屬於其他清單）。`)) return;
+    deletingListId = id;
+    doDeleteList('move', null);
+    return;
+  }
+  deletingListId = id;
+  $('ldTitle').textContent = `刪除「${l.name}」`;
+  $('ldInfo').textContent = `有 ${only.length} 個定點只屬於這個清單（${only.slice(0, 5).map((s) => s.name).join('、')}${only.length > 5 ? '…' : ''}）。這些定點要怎麼處理？`;
+  $('ldTarget').innerHTML = state.lists.filter((x) => x.id !== id).map((x) => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');
+  document.querySelector('input[name=ldMode][value=move]').checked = true;
+  openSheet('listDeleteSheet');
+}
+
+async function confirmDeleteList() {
+  const mode = document.querySelector('input[name=ldMode]:checked').value;
+  if (mode === 'delete') {
+    const n = state.spots.filter((s) => s.listIds.length === 1 && s.listIds[0] === deletingListId).length;
+    if (!confirm(`確定連同 ${n} 個定點和它們的照片一起刪除？`)) return;
+  }
+  await doDeleteList(mode, $('ldTarget').value);
+  closeSheet('listDeleteSheet');
+}
+
+async function doDeleteList(mode, targetId) {
+  const id = deletingListId;
+  const now = Date.now();
+  const changed = [];
+  const removed = [];
+  for (const s of state.spots) {
+    if (!s.listIds.includes(id)) continue;
+    const rest = s.listIds.filter((x) => x !== id);
+    if (rest.length) changed.push({ ...s, listIds: rest, updatedAt: now });
+    else if (mode === 'delete') removed.push(s.id);
+    else changed.push({ ...s, listIds: [targetId], updatedAt: now });
+  }
+  await db.deleteList(id, changed, removed);
+  state.activeListIds.delete(id);
+  await saveActive();
+  deletingListId = null;
+  if (removed.includes(state.previewId)) state.previewId = null;
+  toast(removed.length ? `已刪除清單和 ${removed.length} 個定點` : '已刪除清單');
+  await loadSpots();
+  renderLists();
 }
 
 // ---------- 設定與備份 ----------
@@ -552,6 +741,10 @@ async function onImport(e) {
   try {
     const data = await readBackup(file, pass);
     const r = await mergeBackup(data);
+    if (r.newListIds.length) {
+      for (const id of r.newListIds) state.activeListIds.add(id);
+      await saveActive();
+    }
     forgetPhotoUrls();
     out.textContent = `完成：新增 ${r.added}、更新 ${r.updated}、保留手機版本 ${r.kept}、刪除 ${r.removed} 個定點。`;
     $('iPass').value = '';
@@ -565,6 +758,11 @@ async function onImport(e) {
 // ---------- 事件 ----------
 function bind() {
   $('btnList').addEventListener('click', openList);
+  $('listFilter').addEventListener('change', (e) => { state.listFilter = e.target.value; renderSpotList(); });
+  $('listBar').addEventListener('click', openLists);
+  $('btnNewList').addEventListener('click', newList);
+  $('ldCancel').addEventListener('click', () => closeSheet('listDeleteSheet'));
+  $('ldConfirm').addEventListener('click', confirmDeleteList);
   $('btnSettings').addEventListener('click', openSettings);
   $('banners').addEventListener('click', (e) => { if (e.target.closest('[data-open-settings]')) openSettings(); });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeSheet(b.closest('.sheet').id)));

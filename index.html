@@ -20,10 +20,12 @@
     <h1>定點照片</h1>
     <div class="status" id="gpsStatus">定位中…</div>
     <nav class="top-actions">
-      <button class="icon-btn" id="btnList" aria-label="定點清單">清單</button>
+      <button class="icon-btn" id="btnList" aria-label="全部定點">定點</button>
       <button class="icon-btn" id="btnSettings" aria-label="設定與備份">設定</button>
     </nav>
   </header>
+
+  <button class="list-bar" id="listBar"></button>
 
   <div id="banners"></div>
 
@@ -40,7 +42,39 @@
       <h2>全部定點</h2>
       <button class="btn small" data-close>關閉</button>
     </div>
-    <div class="sheet-body" id="listBody"></div>
+    <div class="sheet-body">
+      <select id="listFilter" class="filter" aria-label="依清單篩選"></select>
+      <div id="listBody"></div>
+    </div>
+  </section>
+
+  <!-- 清單：勾選觸發清單、新增／改名／刪除 -->
+  <section class="sheet" id="listsSheet" hidden>
+    <div class="sheet-head">
+      <h2>觸發清單</h2>
+      <button class="btn small" data-close>完成</button>
+    </div>
+    <div class="sheet-body">
+      <p class="hint">勾選的清單，裡面的定點才會觸發。全部不勾就是暫停。</p>
+      <ul class="lists" id="listsBody"></ul>
+      <button class="btn" id="btnNewList">＋ 新增清單</button>
+    </div>
+  </section>
+
+  <!-- 刪除清單 -->
+  <section class="sheet" id="listDeleteSheet" hidden>
+    <div class="sheet-head">
+      <h2 id="ldTitle">刪除清單</h2>
+      <button class="btn small" id="ldCancel">取消</button>
+    </div>
+    <div class="sheet-body form">
+      <p id="ldInfo"></p>
+      <label class="radio-row"><input type="radio" name="ldMode" value="move" checked> 把這些定點移到
+        <select id="ldTarget"></select>
+      </label>
+      <label class="radio-row"><input type="radio" name="ldMode" value="delete"> 這些定點一併刪除</label>
+      <button class="btn danger" id="ldConfirm">刪除清單</button>
+    </div>
   </section>
 
   <!-- 編輯定點 -->
@@ -60,6 +94,10 @@
           <button type="button" class="btn small" id="fUseHere">改用目前位置</button>
           <button type="button" class="btn small" id="fUseMap">在地圖上調整</button>
         </div>
+      </div>
+      <div class="field">
+        <span class="label">所屬清單（至少一個）</span>
+        <div class="checks" id="fLists"></div>
       </div>
       <label>觸發半徑（公尺）
         <input type="number" id="fRadius" min="5" max="1000" step="1" inputmode="numeric" required>
@@ -137,7 +175,7 @@
 
       <div class="card">
         <h3>匯入備份</h3>
-        <p class="hint">會與手機裡現有的定點合併，同一個定點保留較新的那份。</p>
+        <p class="hint">會與手機裡現有的清單和定點合併，同一筆保留較新的那份。</p>
         <form id="importForm" class="form">
           <label>備份檔
             <input type="file" id="iFile" required>
