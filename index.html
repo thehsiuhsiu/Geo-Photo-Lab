@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f3a34">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="定點照片">
+  <title>定點照片</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>定點照片</h1>
+    <div class="status" id="gpsStatus">定位中…</div>
+    <nav class="top-actions">
+      <button class="icon-btn" id="btnList" aria-label="定點清單">清單</button>
+      <button class="icon-btn" id="btnSettings" aria-label="設定與備份">設定</button>
+    </nav>
+  </header>
+
+  <div id="banners"></div>
+
+  <main id="main" class="main"></main>
+
+  <footer class="bottombar">
+    <button class="btn primary" id="btnAddHere">＋ 用目前位置新增</button>
+    <button class="btn" id="btnAddMap">地圖選點新增</button>
+  </footer>
+
+  <!-- 定點清單 -->
+  <section class="sheet" id="listSheet" hidden>
+    <div class="sheet-head">
+      <h2>全部定點</h2>
+      <button class="btn small" data-close>關閉</button>
+    </div>
+    <div class="sheet-body" id="listBody"></div>
+  </section>
+
+  <!-- 編輯定點 -->
+  <section class="sheet" id="editSheet" hidden>
+    <div class="sheet-head">
+      <h2 id="editTitle">新增定點</h2>
+      <button class="btn small" id="editCancel">取消</button>
+    </div>
+    <form class="sheet-body form" id="editForm" autocomplete="off">
+      <label>名稱
+        <input type="text" id="fName" required maxlength="60" placeholder="例如：OO巡邏箱">
+      </label>
+      <div class="field">
+        <span class="label">位置</span>
+        <div class="coord" id="fCoord"></div>
+        <div class="row">
+          <button type="button" class="btn small" id="fUseHere">改用目前位置</button>
+          <button type="button" class="btn small" id="fUseMap">在地圖上調整</button>
+        </div>
+      </div>
+      <label>觸發半徑（公尺）
+        <input type="number" id="fRadius" min="5" max="1000" step="1" inputmode="numeric" required>
+      </label>
+      <label>備註
+        <textarea id="fNote" rows="3" maxlength="1000" placeholder="例如：巡邏箱在巷子內側電線桿上"></textarea>
+      </label>
+      <div class="field">
+        <span class="label">參考照片</span>
+        <div class="thumbs" id="fPhotos"></div>
+        <label class="btn small file-btn">＋ 拍照或選照片
+          <input type="file" id="fFile" accept="image/*" multiple hidden>
+        </label>
+        <div class="hint" id="fPhotoHint"></div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn primary" id="editSave">儲存</button>
+        <button type="button" class="btn danger" id="editDelete" hidden>刪除這個定點</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 地圖選點 -->
+  <section class="sheet map-sheet" id="mapSheet" hidden>
+    <div class="sheet-head">
+      <h2>移動地圖，對準十字</h2>
+      <button class="btn small" id="mapCancel">取消</button>
+    </div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="crosshair" aria-hidden="true"></div>
+      <button class="btn small locate-btn" id="mapLocate">回到我的位置</button>
+    </div>
+    <div class="map-actions">
+      <button class="btn primary" id="mapConfirm">確定這個位置</button>
+    </div>
+  </section>
+
+  <!-- 設定與備份 -->
+  <section class="sheet" id="settingsSheet" hidden>
+    <div class="sheet-head">
+      <h2>設定與備份</h2>
+      <button class="btn small" data-close>關閉</button>
+    </div>
+    <div class="sheet-body">
+      <div class="card">
+        <label class="switch-row">
+          <span>開著時螢幕保持亮著</span>
+          <input type="checkbox" id="sWake">
+        </label>
+        <div class="hint" id="sWakeHint"></div>
+      </div>
+
+      <div class="card">
+        <h3>匯出備份</h3>
+        <p class="hint">上次備份：<span id="sLastBackup">從未</span></p>
+        <form id="exportForm" class="form">
+          <label>備份密碼
+            <input type="password" id="ePass1" minlength="4" required autocomplete="new-password">
+          </label>
+          <label>再輸入一次
+            <input type="password" id="ePass2" minlength="4" required autocomplete="new-password">
+          </label>
+          <p class="hint">忘記密碼就無法還原，請記好。</p>
+          <button type="submit" class="btn primary">產生備份檔</button>
+        </form>
+        <div id="exportResult" hidden>
+          <p id="exportInfo"></p>
+          <div class="row">
+            <button class="btn primary" id="exportShare">儲存／分享備份檔</button>
+            <a class="btn" id="exportDownload">下載</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>匯入備份</h3>
+        <p class="hint">會與手機裡現有的定點合併，同一個定點保留較新的那份。</p>
+        <form id="importForm" class="form">
+          <label>備份檔
+            <input type="file" id="iFile" required>
+          </label>
+          <label>備份密碼
+            <input type="password" id="iPass" required autocomplete="current-password">
+          </label>
+          <button type="submit" class="btn primary">匯入</button>
+        </form>
+        <p id="importResult" class="hint"></p>
+      </div>
+
+      <p class="hint center">資料只存在這支手機，不會上傳。<br>地圖 © OpenStreetMap 貢獻者</p>
+    </div>
+  </section>
+
+  <!-- 看大圖 -->
+  <div class="viewer" id="viewer" hidden>
+    <img id="viewerImg" alt="">
+    <button class="viewer-close" id="viewerClose" aria-label="關閉">✕</button>
+    <button class="viewer-nav prev" id="viewerPrev" aria-label="上一張">‹</button>
+    <button class="viewer-nav next" id="viewerNext" aria-label="下一張">›</button>
+    <div class="viewer-count" id="viewerCount"></div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
