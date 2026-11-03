@@ -103,7 +103,7 @@ button { cursor: pointer; }
 
 /* 目前定點 */
 .spot-card { background: var(--card); border-radius: 16px; overflow: hidden; }
-.spot-card .hero { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #e5e5ea; }
+.spot-card .hero { display: block; width: 100%; height: auto; min-height: 120px; background: #e5e5ea; }
 .spot-info { padding: 14px 16px 16px; }
 .spot-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .here-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--green); margin-bottom: 2px; }
@@ -298,3 +298,10 @@ button.cell:active, a.cell:active, .cell.tap:active { background: #e5e5ea; }
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .toast[hidden] { display: none; }
+
+/* 也在範圍內：放在卡片下方，用大列表 */
+.others-title { margin-top: 20px; font-size: 15px; font-weight: 600; color: var(--ink2); }
+.others-group .spot-cell { min-height: 68px; }
+.others-group .thumb-sm { width: 52px; height: 52px; }
+.others-group .spot-cell .name { font-size: 18px; font-weight: 600; }
+.others-group .spot-cell .name small { font-weight: 400; }
