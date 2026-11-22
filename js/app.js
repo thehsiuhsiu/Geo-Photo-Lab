@@ -260,9 +260,9 @@ function renderWakePill() {
   const b = $('wakePill');
   if (!b) return;
   let cls, icon, text;
-  if (!state.wakeEnabled) { cls = 'off'; icon = ICON.moon; text = '長亮關'; }
-  else if (wakeActive()) { cls = 'on'; icon = ICON.sun; text = '長亮中'; }
-  else { cls = 'warn'; icon = ICON.sun; text = '點一下啟動長亮'; }
+  if (!state.wakeEnabled) { cls = 'off'; icon = ICON.moon; text = '常亮：關'; }
+  else if (wakeActive()) { cls = 'on'; icon = ICON.sun; text = '常亮：開'; }
+  else { cls = 'warn'; icon = ICON.sun; text = '點一下啟動常亮'; }
   if (b.dataset.cls === cls) return;
   b.dataset.cls = cls;
   b.className = `wake-pill ${cls}`;
@@ -1089,7 +1089,7 @@ function bind() {
     // 開著但還沒生效：這一下點擊本身就會啟動（見上方 click 監聽），不要把它關掉
     if (state.wakeEnabled && !wakeActive()) return;
     setWakeEnabled(!state.wakeEnabled);
-    toast(state.wakeEnabled ? '螢幕保持亮著：開' : '螢幕保持亮著：關');
+    toast(state.wakeEnabled ? '螢幕常亮：開' : '螢幕常亮：關');
   });
   $('exportForm').addEventListener('submit', onExport);
   $('exportShare').addEventListener('click', onShareExport);
