@@ -162,6 +162,20 @@
       </div>
       <p class="group-foot" id="sWakeHint">開著本 App 時螢幕不會自動鎖定，定位才不會中斷。</p>
 
+      <div class="group" style="margin-top:22px">
+        <label class="cell">
+          <span>進入定點時「叮」一聲</span>
+          <input type="checkbox" class="switch" id="sChime">
+        </label>
+        <div class="cell volume-cell" id="sVolumeCell">
+          <span class="cell-label">音量</span>
+          <input type="range" id="sVolume" min="0" max="100" step="5" aria-label="提示音音量">
+          <span class="volume-val" id="sVolumeVal"></span>
+          <button type="button" class="btn-tinted" id="sChimeTest">試聽</button>
+        </div>
+      </div>
+      <p class="group-foot">進入任何定點的觸發半徑時響一聲。iPhone 開靜音（側邊開關或動作按鈕）時不會響；實際大小也跟著手機音量。打開 App 後要先點一下畫面，之後才能自動出聲。</p>
+
       <p class="group-title">匯出備份</p>
       <form id="exportForm">
         <div class="group">

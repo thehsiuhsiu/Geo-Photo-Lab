@@ -1,5 +1,5 @@
 // 離線支援：程式檔先用快取、背景更新；地圖底圖看過的會留著
-const APP_CACHE = 'geo-photo-app-v7';
+const APP_CACHE = 'geo-photo-app-v8';
 const TILE_CACHE = 'geo-photo-tiles-v1';
 const TILE_LIMIT = 800;
 
@@ -11,6 +11,7 @@ const APP_FILES = [
   'js/db.js',
   'js/backup.js',
   'js/util.js',
+  'js/chime.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
