@@ -53,7 +53,7 @@ export async function createBackup(password) {
 
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
-  const name = `定點照片備份-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.gpbak`;
+  const name = `G-PictureS備份-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.gpbak`;
   return { file: new File([out], name, { type: 'application/octet-stream' }), spotCount: spots.length, photoCount: photos.length };
 }
 
@@ -61,7 +61,7 @@ export async function createBackup(password) {
 export async function readBackup(file, password) {
   const buf = new Uint8Array(await file.arrayBuffer());
   const magic = new TextDecoder().decode(buf.subarray(0, 4));
-  if (magic !== 'GPL1') throw new Error('這不是定點照片的備份檔');
+  if (magic !== 'GPL1') throw new Error('這不是 G-PictureS 的備份檔');
   const salt = buf.subarray(4, 20);
   const iv = buf.subarray(20, 32);
   const key = await deriveKey(password, salt);
@@ -72,7 +72,7 @@ export async function readBackup(file, password) {
     throw new Error('密碼錯誤，或備份檔已損壞');
   }
   const data = JSON.parse(new TextDecoder().decode(plain));
-  if (data.app !== 'geo-photo-lab') throw new Error('這不是定點照片的備份檔');
+  if (data.app !== 'geo-photo-lab') throw new Error('這不是 G-PictureS 的備份檔');
   return data;
 }
 

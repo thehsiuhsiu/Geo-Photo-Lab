@@ -1,4 +1,4 @@
-# Geo-Photo-Lab（定點照片）
+# Geo-Photo-Lab（G-PictureS）
 
 依手機當下 GPS 位置，顯示預先設定的定點參考照片（例如巡邏點現場照）的網頁工具。
 
