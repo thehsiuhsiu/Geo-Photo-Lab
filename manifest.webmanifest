@@ -1,6 +1,6 @@
 {
-  "name": "G-PictureS",
-  "short_name": "G-PictureS",
+  "name": "G-Pictures",
+  "short_name": "G-Pictures",
   "description": "依手機 GPS 位置顯示預先設定的定點參考照片",
   "lang": "zh-Hant-TW",
   "start_url": "./",
