@@ -1,5 +1,6 @@
 import * as db from './db.js';
 import { createBackup, readBackup, mergeBackup } from './backup.js';
+import * as chime from './chime.js';
 import { distance, formatDistance, formatDateTime, shrinkPhoto, escapeHtml, isIOS, isStandalone } from './util.js';
 
 const DEFAULT_RADIUS = 20;
@@ -36,14 +37,15 @@ const state = {
   activeListIds: new Set(), // 觸發清單
   pos: null, // {lat, lng, accuracy, ts}
   geoError: null,
-  currentId: null, // 目前定點
-  selectedId: null, // 範圍內多個定點時，手動切換到的那個
+  inRangeIds: new Set(), // 目前在觸發半徑內的定點
   previewId: null, // 範圍外手動預覽的定點
   decided: false, // 是否已用夠準的定位判斷過一次
   viewKey: '',
   dirtySince: null,
   lastBackupAt: null,
   wakeEnabled: true,
+  chimeEnabled: true,
+  chimeVolume: 40, // 0～100
 };
 
 // ---------- 照片網址快取 ----------
@@ -268,36 +270,50 @@ function isReliable() {
   return !!state.pos && state.pos.accuracy <= MAX_SWITCH_ACCURACY;
 }
 
+/** 判斷哪些定點在範圍內；新進入範圍時叮一聲 */
+function updateRange() {
+  const spots = state.activeListIds.size ? activeSpots() : [];
+  if (!state.pos || !spots.length) {
+    state.inRangeIds = new Set();
+    return { inRange: [], withD: [] };
+  }
+  const withD = spots.map((s) => ({ s, d: spotDistance(s) })).sort((a, b) => a.d - b.d);
+  let ids;
+  if (!isReliable() && state.decided) {
+    // 誤差太大：維持上一次的判斷，不切換照片
+    ids = new Set([...state.inRangeIds].filter((id) => spots.some((s) => s.id === id)));
+  } else {
+    ids = new Set(withD
+      .filter(({ s, d }) => d <= s.radius + (state.inRangeIds.has(s.id) ? LEAVE_MARGIN : 0))
+      .map((x) => x.s.id));
+    if (isReliable()) {
+      state.decided = true;
+      if ([...ids].some((id) => !state.inRangeIds.has(id))) playChime();
+    }
+  }
+  state.inRangeIds = ids;
+  // 用名稱排序，畫面不會因距離變動而跳來跳去
+  const inRange = spots.filter((s) => ids.has(s.id)).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
+  return { inRange, withD };
+}
+
 function computeView() {
+  const { inRange, withD } = updateRange(); // 預覽中也照常判斷，進入範圍才會叮
   if (state.previewId) {
     const s = state.spots.find((x) => x.id === state.previewId);
-    if (s) return { mode: 'preview', spot: s, others: [] };
+    if (s) return { mode: 'preview', spots: [s] };
     state.previewId = null;
   }
   if (!state.spots.length) return { mode: 'empty' };
   if (!state.activeListIds.size) return { mode: 'paused' };
-  const spots = activeSpots();
-  if (!spots.length) return { mode: 'noActiveSpots' };
+  if (!activeSpots().length) return { mode: 'noActiveSpots' };
   if (!state.pos) return { mode: 'waiting' };
-
-  const withD = spots.map((s) => ({ s, d: spotDistance(s) })).sort((a, b) => a.d - b.d);
-  const inRange = withD.filter(({ s, d }) => d <= s.radius + (s.id === state.currentId ? LEAVE_MARGIN : 0));
-  // 誤差太大：維持上一次的判斷，不切換照片
-  if (!isReliable() && state.decided) {
-    const held = withD.find((x) => x.s.id === state.currentId);
-    if (held) return { mode: 'here', spot: held.s, others: inRange.filter((x) => x.s.id !== held.s.id).map((x) => x.s) };
-    if (!state.currentId) return { mode: 'away', nearest: withD.slice(0, NEAREST_COUNT).map((x) => x.s) };
-  }
-  if (isReliable()) state.decided = true;
-  if (inRange.length) {
-    const cur = inRange.find((x) => x.s.id === state.selectedId) || inRange[0];
-    if (!inRange.some((x) => x.s.id === state.selectedId)) state.selectedId = null;
-    state.currentId = cur.s.id;
-    return { mode: 'here', spot: cur.s, others: inRange.filter((x) => x !== cur).map((x) => x.s) };
-  }
-  state.currentId = null;
-  state.selectedId = null;
+  if (inRange.length) return { mode: 'here', spots: inRange };
   return { mode: 'away', nearest: withD.slice(0, NEAREST_COUNT).map((x) => x.s) };
+}
+
+function playChime() {
+  if (state.chimeEnabled && state.chimeVolume > 0) chime.ding(state.chimeVolume);
 }
 
 function render() {
@@ -305,7 +321,7 @@ function render() {
   renderTriggerPill();
   renderBanners();
   const v = computeView();
-  const key = [v.mode, v.spot?.id, v.spot?.updatedAt, (v.others || []).map((s) => s.id).join(','), (v.nearest || []).map((s) => s.id).join(','), state.spots.length, [...state.activeListIds].join(',')].join('|');
+  const key = [v.mode, (v.spots || []).map((s) => `${s.id}@${s.updatedAt}`).join(','), (v.nearest || []).map((s) => s.id).join(','), state.spots.length, [...state.activeListIds].join(',')].join('|');
   if (key !== state.viewKey) {
     state.viewKey = key;
     renderMain(v);
@@ -324,8 +340,8 @@ function renderTriggerPill() {
 }
 
 function currentRadius() {
-  const s = state.spots.find((x) => x.id === state.currentId);
-  if (s) return s.radius;
+  const here = state.spots.filter((x) => state.inRangeIds.has(x.id));
+  if (here.length) return Math.min(...here.map((x) => x.radius));
   const spots = activeSpots();
   if (!state.pos || !spots.length) return null;
   let best = null;
@@ -391,7 +407,7 @@ function renderMain(v) {
       <p class="group-foot">點一下可以先看照片。</p>`;
     fillThumbs(main);
   } else {
-    renderSpotCard(main, v);
+    renderSpotCards(main, v);
   }
   main.querySelectorAll('[data-manage]').forEach((b) => b.addEventListener('click', openManage));
   main.querySelectorAll('[data-preview]').forEach((b) => b.addEventListener('click', () => {
@@ -418,14 +434,24 @@ async function fillThumbs(root) {
   }
 }
 
-function renderSpotCard(main, v) {
-  const s = v.spot;
-  const ids = s.photoIds || [];
+function renderSpotCards(main, v) {
   const preview = v.mode === 'preview';
+  const multi = v.spots.length > 1;
   main.innerHTML = `
     ${preview ? `<div class="preview-note"><span>預覽中，你不在這個定點</span><button class="btn-tinted" id="endPreview">返回</button></div>` : ''}
-    <article class="spot-card">
-      ${ids.length ? '<img class="hero" id="heroImg" alt="">' : ''}
+    ${multi ? `<p class="group-title stack-title">範圍內有 ${v.spots.length} 個定點・往下滑看全部照片</p>` : ''}
+    ${v.spots.map((s) => spotCard(s, preview, multi)).join('')}`;
+  $('endPreview')?.addEventListener('click', () => { state.previewId = null; render(); });
+  main.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => {
+    const s = state.spots.find((x) => x.id === b.dataset.edit);
+    if (s) openEditor(s);
+  }));
+  for (const s of v.spots) fillPhotos(main.querySelector(`[data-card="${s.id}"]`), s);
+}
+
+function spotCard(s, preview, multi) {
+  const ids = s.photoIds || [];
+  const info = `
       <div class="spot-info">
         <div class="spot-top">
           <div>
@@ -436,37 +462,30 @@ function renderSpotCard(main, v) {
           <button class="btn-tinted" data-edit="${s.id}">編輯</button>
         </div>
         ${s.note ? `<p class="note">${escapeHtml(s.note)}</p>` : ''}
-      </div>
-      ${ids.length > 1 ? '<div class="more-photos" id="morePhotos"></div>' : ''}
+      </div>`;
+  const hero = ids.length ? '<img class="hero" data-hero alt="">' : '';
+  // 多個定點重疊時，把名稱放在照片上面，滑動時才知道照片屬於哪個定點
+  return `
+    <article class="spot-card ${multi ? 'stacked' : ''}" data-card="${s.id}">
+      ${multi ? info + hero : hero + info}
+      ${ids.length > 1 ? '<div class="more-photos" data-more-photos></div>' : ''}
       ${ids.length ? '' : '<p class="no-photo">這個定點還沒有參考照片。</p>'}
-    </article>
-    ${v.others.length ? `
-      <p class="group-title others-title">也在範圍內・點一下切換</p>
-      <div class="group others-group">${v.others.map((o) => spotCell(o, `data-select="${o.id}"`)).join('')}</div>` : ''}`;
-  fillThumbs(main);
-  main.querySelectorAll('[data-select]').forEach((b) => b.addEventListener('click', () => {
-    state.selectedId = b.dataset.select;
-    render();
-    window.scrollTo(0, 0);
-  }));
-  $('endPreview')?.addEventListener('click', () => { state.previewId = null; render(); });
-  main.querySelector('[data-edit]').addEventListener('click', () => openEditor(s));
-  fillPhotos(s);
+    </article>`;
 }
 
-async function fillPhotos(s) {
-  const hero = $('heroImg');
+async function fillPhotos(card, s) {
+  const hero = card?.querySelector('[data-hero]');
   if (!hero) return;
   const urls = [];
   for (const id of s.photoIds || []) {
     const url = await photoUrl(id);
     if (url) urls.push(url);
   }
-  if ($('heroImg') !== hero || !urls.length) return; // 畫面已換
+  if (!card.isConnected || !urls.length) return; // 畫面已換
   hero.src = urls[0];
   hero.alt = `${s.name} 參考照片 1`;
   hero.addEventListener('click', () => openViewer(urls, 0));
-  const more = $('morePhotos');
+  const more = card.querySelector('[data-more-photos]');
   urls.slice(1).forEach((url, i) => {
     const img = document.createElement('img');
     img.src = url;
@@ -844,12 +863,23 @@ function stepViewer(n) {
   showViewer();
 }
 
+// ---------- 提示音設定 ----------
+function renderChimeSettings() {
+  $('sVolumeCell').classList.toggle('disabled', !state.chimeEnabled);
+  $('sVolume').disabled = !state.chimeEnabled;
+  $('sVolumeVal').textContent = state.chimeVolume;
+  $('sVolume').style.setProperty('--vol', `${state.chimeVolume}%`);
+}
+
 // ---------- 設定與備份 ----------
 let exportFile = null;
 let exportUrl = null;
 
 function openSettings() {
   $('sWake').checked = state.wakeEnabled;
+  $('sChime').checked = state.chimeEnabled;
+  $('sVolume').value = state.chimeVolume;
+  renderChimeSettings();
   renderWakeStatus();
   $('sLastBackup').textContent = formatDateTime(state.lastBackupAt);
   $('exportResult').hidden = true;
@@ -994,8 +1024,28 @@ function bind() {
   document.querySelectorAll('[data-theme-opt]').forEach((b) => b.addEventListener('click', () => setTheme(b.dataset.themeOpt)));
   darkQuery.addEventListener?.('change', applyTheme);
   // iPhone 只在使用者操作時允許保持亮屏：每次點畫面都補一次
-  document.addEventListener('touchend', () => { if (state.wakeEnabled && !wakeActive()) applyWakeLock(); }, { passive: true });
-  document.addEventListener('click', () => { if (state.wakeEnabled && !wakeActive()) applyWakeLock(); });
+  // 提示音也一樣：iPhone 要點過畫面才允許自動出聲
+  document.addEventListener('touchend', () => { chime.unlock(); if (state.wakeEnabled && !wakeActive()) applyWakeLock(); }, { passive: true });
+  document.addEventListener('click', () => { chime.unlock(); if (state.wakeEnabled && !wakeActive()) applyWakeLock(); });
+  $('sChime').addEventListener('change', async (e) => {
+    state.chimeEnabled = e.target.checked;
+    renderChimeSettings();
+    await db.setMeta('chimeEnabled', state.chimeEnabled);
+    if (state.chimeEnabled) chime.ding(state.chimeVolume);
+  });
+  $('sVolume').addEventListener('input', (e) => {
+    state.chimeVolume = Number(e.target.value);
+    renderChimeSettings();
+  });
+  $('sVolume').addEventListener('change', async () => {
+    chime.ding(state.chimeVolume); // 放開滑桿時試聽
+    await db.setMeta('chimeVolume', state.chimeVolume);
+  });
+  $('sChimeTest').addEventListener('click', () => {
+    chime.unlock();
+    if (state.chimeVolume <= 0) { toast('音量是 0，請先調大'); return; }
+    chime.ding(state.chimeVolume);
+  });
   $('sWake').addEventListener('change', async (e) => {
     state.wakeEnabled = e.target.checked;
     await db.setMeta('wakeEnabled', state.wakeEnabled);
@@ -1021,6 +1071,8 @@ async function init() {
   bind();
   applyTheme();
   state.wakeEnabled = await db.getMeta('wakeEnabled', true);
+  state.chimeEnabled = await db.getMeta('chimeEnabled', true);
+  state.chimeVolume = await db.getMeta('chimeVolume', 40);
   await loadSpots();
   startWatch();
   applyWakeLock();
