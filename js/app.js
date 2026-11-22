@@ -28,6 +28,8 @@ const ICON = {
   camera: svg('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'),
   pin: svg('<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>'),
   locate: svg('<path d="M3 11l18-8-8 18-2-8z" fill="currentColor"/>'),
+  sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  moon: svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
   pause: svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>'),
 };
 
@@ -206,6 +208,8 @@ function keepAwakeVideoEl() {
   v.setAttribute('aria-hidden', 'true');
   v.style.cssText = 'position:fixed;width:2px;height:2px;opacity:.01;pointer-events:none;left:0;bottom:0;z-index:-1';
   v.addEventListener('timeupdate', () => { if (v.currentTime > 2.5) v.currentTime = 0.1; });
+  v.addEventListener('play', () => renderWakeStatus());
+  v.addEventListener('pause', () => renderWakeStatus());
   v.addEventListener('ended', () => { v.currentTime = 0; if (state.wakeEnabled) v.play().catch(() => {}); });
   document.body.appendChild(v);
   keepAwakeVideo = v;
@@ -251,7 +255,29 @@ async function applyWakeLock() {
   renderWakeStatus();
 }
 
+/** 主畫面右上的長亮狀態膠囊 */
+function renderWakePill() {
+  const b = $('wakePill');
+  if (!b) return;
+  let cls, icon, text;
+  if (!state.wakeEnabled) { cls = 'off'; icon = ICON.moon; text = '長亮關'; }
+  else if (wakeActive()) { cls = 'on'; icon = ICON.sun; text = '長亮中'; }
+  else { cls = 'warn'; icon = ICON.sun; text = '點一下啟動長亮'; }
+  if (b.dataset.cls === cls) return;
+  b.dataset.cls = cls;
+  b.className = `wake-pill ${cls}`;
+  b.innerHTML = `${icon}<span>${text}</span>`;
+}
+
+async function setWakeEnabled(on) {
+  state.wakeEnabled = on;
+  $('sWake').checked = on;
+  await db.setMeta('wakeEnabled', on);
+  applyWakeLock();
+}
+
 function renderWakeStatus() {
+  renderWakePill();
   const el = $('sWakeHint');
   if (!el) return;
   if (!state.wakeEnabled) { el.textContent = '已關閉：iPhone 會依「自動鎖定」時間關螢幕。'; return; }
@@ -476,10 +502,10 @@ function spotCard(s, preview, multi) {
         ${s.note ? `<p class="note">${escapeHtml(s.note)}</p>` : ''}
       </div>`;
   const hero = ids.length ? '<img class="hero" data-hero alt="">' : '';
-  // 多個定點重疊時，把名稱放在照片上面，滑動時才知道照片屬於哪個定點
+  // 名稱放在照片上面；多個定點重疊時，滑動時也知道照片屬於哪個定點
   return `
     <article class="spot-card ${multi ? 'stacked' : ''}" data-card="${s.id}">
-      ${multi ? info + hero : hero + info}
+      ${info}${hero}
       ${ids.length > 1 ? '<div class="more-photos" data-more-photos></div>' : ''}
       ${ids.length ? '' : '<p class="no-photo">這個定點還沒有參考照片。</p>'}
     </article>`;
@@ -1058,10 +1084,12 @@ function bind() {
     if (state.chimeVolume <= 0) { toast('音量是 0，請先調大'); return; }
     chime.ding(state.chimeVolume);
   });
-  $('sWake').addEventListener('change', async (e) => {
-    state.wakeEnabled = e.target.checked;
-    await db.setMeta('wakeEnabled', state.wakeEnabled);
-    applyWakeLock();
+  $('sWake').addEventListener('change', (e) => setWakeEnabled(e.target.checked));
+  $('wakePill').addEventListener('click', () => {
+    // 開著但還沒生效：這一下點擊本身就會啟動（見上方 click 監聽），不要把它關掉
+    if (state.wakeEnabled && !wakeActive()) return;
+    setWakeEnabled(!state.wakeEnabled);
+    toast(state.wakeEnabled ? '螢幕保持亮著：開' : '螢幕保持亮著：關');
   });
   $('exportForm').addEventListener('submit', onExport);
   $('exportShare').addEventListener('click', onShareExport);
