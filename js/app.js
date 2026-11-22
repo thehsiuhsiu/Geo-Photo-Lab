@@ -189,6 +189,8 @@ function startWatch() {
 // iPhone 主畫面 App 在 iOS 18.4 以前，Wake Lock 會回報成功但其實沒作用，所以 iPhone 上兩種一起開。
 // 影片注意：iOS 只有「有聲音軌、而且不是 loop」的影片播放時才會讓螢幕不鎖定，
 // 所以影片帶一條無聲音軌，並用 timeupdate 自己跳回開頭，不設 loop。
+// 靜音（muted）的影片 iOS 也當成沒聲音，所以 iPhone 上不靜音播放（音軌本身是無聲的），
+// 並把音訊類型設成 ambient：跟其他 App 的音樂混合、不會把它暫停，也遵守靜音開關。
 // iPhone 只允許在使用者點畫面時啟動，所以每次點畫面都會檢查一次。
 let wakeLock = null;
 let keepAwakeVideo = null;
@@ -198,9 +200,9 @@ function keepAwakeVideoEl() {
   if (keepAwakeVideo) return keepAwakeVideo;
   const v = document.createElement('video');
   v.src = 'media/keep-awake.mp4';
-  v.muted = true;
+  v.muted = !isIOS;
   v.setAttribute('playsinline', '');
-  v.setAttribute('muted', '');
+  if (!isIOS) v.setAttribute('muted', '');
   v.setAttribute('aria-hidden', 'true');
   v.style.cssText = 'position:fixed;width:2px;height:2px;opacity:.01;pointer-events:none;left:0;bottom:0;z-index:-1';
   v.addEventListener('timeupdate', () => { if (v.currentTime > 2.5) v.currentTime = 0.1; });
@@ -242,6 +244,7 @@ async function applyWakeLock() {
   // iPhone 一律加播靜音影片；其他裝置只在 Wake Lock 失敗時才用
   if (isIOS || !wakeLock) {
     try {
+      if (isIOS && navigator.audioSession) navigator.audioSession.type = 'ambient';
       await keepAwakeVideoEl().play();
     } catch { /* 需要點一下畫面才能播放 */ }
   }
