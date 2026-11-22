@@ -185,7 +185,10 @@ function startWatch() {
 }
 
 // ---------- 螢幕常亮 ----------
-// 優先用 Wake Lock API；被拒或不支援時，改用「靜音循環播放小影片」讓 iPhone 不自動鎖定。
+// 用 Wake Lock API，再加上「靜音播放小影片」當保險讓 iPhone 不自動鎖定。
+// iPhone 主畫面 App 在 iOS 18.4 以前，Wake Lock 會回報成功但其實沒作用，所以 iPhone 上兩種一起開。
+// 影片注意：iOS 只有「有聲音軌、而且不是 loop」的影片播放時才會讓螢幕不鎖定，
+// 所以影片帶一條無聲音軌，並用 timeupdate 自己跳回開頭，不設 loop。
 // iPhone 只允許在使用者點畫面時啟動，所以每次點畫面都會檢查一次。
 let wakeLock = null;
 let keepAwakeVideo = null;
@@ -196,17 +199,24 @@ function keepAwakeVideoEl() {
   const v = document.createElement('video');
   v.src = 'media/keep-awake.mp4';
   v.muted = true;
-  v.loop = true;
   v.setAttribute('playsinline', '');
   v.setAttribute('muted', '');
-  v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:0;bottom:0';
+  v.setAttribute('aria-hidden', 'true');
+  v.style.cssText = 'position:fixed;width:2px;height:2px;opacity:.01;pointer-events:none;left:0;bottom:0;z-index:-1';
+  v.addEventListener('timeupdate', () => { if (v.currentTime > 2.5) v.currentTime = 0.1; });
+  v.addEventListener('ended', () => { v.currentTime = 0; if (state.wakeEnabled) v.play().catch(() => {}); });
   document.body.appendChild(v);
   keepAwakeVideo = v;
   return v;
 }
 
+function videoPlaying() {
+  return !!keepAwakeVideo && !keepAwakeVideo.paused;
+}
+
 function wakeActive() {
-  return !!wakeLock || (keepAwakeVideo && !keepAwakeVideo.paused);
+  // iPhone 上 Wake Lock 不一定可靠，影片也要在播才算
+  return isIOS ? videoPlaying() : (!!wakeLock || videoPlaying());
 }
 
 async function applyWakeLock() {
@@ -217,24 +227,24 @@ async function applyWakeLock() {
     return;
   }
   if (wakeActive()) { renderWakeStatus(); return; }
-  if ('wakeLock' in navigator) {
+  if (!wakeLock && 'wakeLock' in navigator) {
     try {
       wakeLock = await navigator.wakeLock.request('screen');
       wakeLock.addEventListener('release', () => { wakeLock = null; renderWakeStatus(); });
       wakeError = '';
-      renderWakeStatus();
-      return;
     } catch (err) {
       wakeLock = null;
       wakeError = err?.name || 'Error';
     }
-  } else {
+  } else if (!('wakeLock' in navigator)) {
     wakeError = 'Unsupported';
   }
-  // 備援：播放靜音影片
-  try {
-    await keepAwakeVideoEl().play();
-  } catch { /* 需要點一下畫面才能播放 */ }
+  // iPhone 一律加播靜音影片；其他裝置只在 Wake Lock 失敗時才用
+  if (isIOS || !wakeLock) {
+    try {
+      await keepAwakeVideoEl().play();
+    } catch { /* 需要點一下畫面才能播放 */ }
+  }
   renderWakeStatus();
 }
 
@@ -242,8 +252,7 @@ function renderWakeStatus() {
   const el = $('sWakeHint');
   if (!el) return;
   if (!state.wakeEnabled) { el.textContent = '已關閉：iPhone 會依「自動鎖定」時間關螢幕。'; return; }
-  if (wakeLock) { el.textContent = '✓ 運作中：開著本 App 時螢幕不會自動鎖定。'; return; }
-  if (keepAwakeVideo && !keepAwakeVideo.paused) { el.textContent = '✓ 運作中（備用方式）：開著本 App 時螢幕不會自動鎖定。'; return; }
+  if (wakeActive()) { el.textContent = '✓ 運作中：開著本 App 時螢幕不會自動鎖定。'; return; }
   el.textContent = '⚠ 目前沒有作用。請點一下畫面任何地方再試；若仍無效，請確認沒有開「低耗電模式」，並將 iOS 更新到 18.4 以上。'
     + (wakeError ? `（${wakeError}）` : '');
 }
